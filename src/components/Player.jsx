@@ -1,21 +1,8 @@
-/* eslint-disable react-refresh/only-export-components */
-import { openDB } from 'idb';
+// import { openDB } from 'idb';
 import { Component } from 'react'
 // import { Howl, Howler } from "howler";
 // const themeNow = new Howl()
 
-
-const DB = await openDB('musicaDB', 1, {
-  upgrade(db) {
-    // Create a store of objects
-    db.createObjectStore('musica', {
-      // The 'id' property of the object will be the key.
-      keyPath: 'id',
-      // If it isn't explicitly set, create a value by auto incrementing.
-      autoIncrement: true,
-    });
-  },
-})
 
 
 export default class Player extends Component {
@@ -29,48 +16,73 @@ export default class Player extends Component {
 
       ],
       player: new Audio(),
-      db: DB     
     }
-    this.searchPermissions = this.searchPermissions.bind(this)
+    this.RetrieveMusicFiles = this.RetrieveMusicFiles.bind(this)
     this.getBiblio = this.getBiblio.bind(this)
   }
 
-  searchPermissions = async () => {
-    const granted = await document.hasStorageAccess();
-    console.log(granted);
+  RetrieveMusicFiles = async () => {
+    try {
+      const db = await openDatabase();
+      const transaction = db.transaction(['music'], 'readonly');
+      const objectStore = transaction.objectStore('music');
+      const request = objectStore.getAll();
 
-    if (granted) {
-      this.setState({ permission: true })
-    } else {
-      document.requestStorageAccess()
+      request.onsuccess = (event) => {
+        const files = event.target.result;
+        this.setState({ biblioteca: files })
+      };
+    } catch (error) {
+      console.error('Error retrieving music files:', error);
+    }
+  };
+
+  handleFileUpload = async (event) => {
+    const files = event.target.files;
+
+    try {
+      const db = await openDatabase();
+      const transaction = db.transaction(['music'], 'readwrite');
+      const objectStore = transaction.objectStore('music');
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const request = objectStore.add(file);
+
+        request.onsuccess = () => {
+          console.log('File added to IndexedDB:', file.name);
+        };
+
+        request.onerror = (event) => {
+          console.error('Error adding file to IndexedDB:', event.target.error);
+        };
+      }
+
+      this.setState({ biblioteca: [...this.state.biblioteca, ...files] })
+    } catch (error) {
+      console.error('Error uploading files:', error);
     }
   }
 
-  getBiblio = async () => {
+  OpenDatabase = () => {
+    return new Promise((resolve, reject) => {
+      const request = window.indexedDB.open('MusicDatabase', 1);
 
-    const {db} = this.state
+      request.onerror = (event) => {
+        reject(event.target.error);
+      };
 
-    console.log(await db.getAllFromIndex('musica', 'id'));
-    // this.setState({ biblioteca: newBiblio });
-  };
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+        resolve(db);
+      };
 
-  handleFileChange = (event) => {
-    const selectedFiles = event.target.files;
-    const filesArray = Array.from(selectedFiles);
-
-    filesArray.forEach((file, index) => {
-      this.initBiblio(file, index);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        db.createObjectStore('music', { keyPath: 'name' });
+      };
     });
   };
-
-  initBiblio = async (file) => {
-    const {db} = this.state
-
-    const item = db.transaction('musica', 'readwrite')
-
-    await item.store(file)
-  };
-
 
   render() {
     const { player, biblioteca } = this.state
@@ -79,7 +91,7 @@ export default class Player extends Component {
     return (
       <div>
 
-        <input type="file" multiple onChange={this.handleFileChange} />
+        <input type="file" multiple onChange={this.handleFileUpload} />
 
         <button onClick={() => {
           // honk.currentTime=0
