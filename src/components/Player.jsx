@@ -1,8 +1,21 @@
+/* eslint-disable react-refresh/only-export-components */
 import { openDB } from 'idb';
 import { Component } from 'react'
 // import { Howl, Howler } from "howler";
 // const themeNow = new Howl()
 
+
+const DB = await openDB('musicaDB', 1, {
+  upgrade(db) {
+    // Create a store of objects
+    db.createObjectStore('musica', {
+      // The 'id' property of the object will be the key.
+      keyPath: 'id',
+      // If it isn't explicitly set, create a value by auto incrementing.
+      autoIncrement: true,
+    });
+  },
+})
 
 
 export default class Player extends Component {
@@ -16,6 +29,7 @@ export default class Player extends Component {
 
       ],
       player: new Audio(),
+      db: DB     
     }
     this.searchPermissions = this.searchPermissions.bind(this)
     this.getBiblio = this.getBiblio.bind(this)
@@ -30,19 +44,15 @@ export default class Player extends Component {
     } else {
       document.requestStorageAccess()
     }
-
-    openDB('musicaDB', 1, {
-      upgrade(db) {
-        db.createObjectStore('musica')
-      }
-    })
   }
 
-  getBiblio = async()=>{
-    const db = await openDB('musicaDB', 1)
-    const newBiblio = await db.getAll()
-    this.setState({biblioteca: newBiblio})
-  }
+  getBiblio = async () => {
+
+    const {db} = this.state
+
+    console.log(await db.getAllFromIndex('musica', 'id'));
+    // this.setState({ biblioteca: newBiblio });
+  };
 
   handleFileChange = (event) => {
     const selectedFiles = event.target.files;
@@ -53,19 +63,19 @@ export default class Player extends Component {
     });
   };
 
-  initBiblio = async (file, id) => {
+  initBiblio = async (file) => {
+    const {db} = this.state
 
-    const db = await openDB('musicaDB', 1)
-    const musica = { file }
-    await db.add('musica', musica, `${id}`)
-    console.log('Archivo de música almacenado exitosamente');
+    const item = db.transaction('musica', 'readwrite')
+    
+    await db.add('musica', file)
   };
 
 
   render() {
     const { player, biblioteca } = this.state
 
-    console.log(biblioteca[0], player);
+    console.log(biblioteca, player);
     return (
       <div>
 
