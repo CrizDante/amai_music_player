@@ -67,8 +67,8 @@ export default class Player extends Component {
     const {db} = this.state
 
     const item = db.transaction('musica', 'readwrite')
-    
-    await db.add('musica', file)
+
+    await item.store(file)
   };
 
 
