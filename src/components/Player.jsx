@@ -10,37 +10,57 @@ export default class Player extends Component {
   constructor(props) {
     super(props)
     this.state = {
+      permission: false,
       biblioteca: [],
       lista: [
 
       ],
       player: new Audio(),
     }
+    this.searchPermissions = this.searchPermissions.bind(this)
+    this.getBiblio = this.getBiblio.bind(this)
+  }
+
+  searchPermissions = async () => {
+    const granted = await document.hasStorageAccess();
+    console.log(granted);
+
+    if (granted) {
+      this.setState({ permission: true })
+    } else {
+      document.requestStorageAccess()
+    }
+
+    openDB('musicaDB', 1, {
+      upgrade(db) {
+        db.createObjectStore('musica')
+      }
+    })
+  }
+
+  getBiblio = async()=>{
+    const db = await openDB('musicaDB', 1)
+    const newBiblio = await db.getAll()
+    this.setState({biblioteca: newBiblio})
   }
 
   handleFileChange = (event) => {
     const selectedFiles = event.target.files;
     const filesArray = Array.from(selectedFiles);
 
-    filesArray.forEach((file) => {
-      this.initBiblio(file);
+    filesArray.forEach((file, index) => {
+      this.initBiblio(file, index);
     });
   };
 
-  initBiblio = async (file) => {
+  initBiblio = async (file, id) => {
+
     const db = await openDB('musicaDB', 1)
-    const transaccion = db.transaction('musica', 'readwrite')
-    const objectStore = transaccion.objectStore('musica')
-
     const musica = { file }
-    await objectStore.add(musica)
-
+    await db.add('musica', musica, `${id}`)
     console.log('Archivo de música almacenado exitosamente');
   };
 
-  initPLayer = () => {
-
-  }
 
   render() {
     const { player, biblioteca } = this.state
