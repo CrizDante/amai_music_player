@@ -1,112 +1,123 @@
-// import { openDB } from 'idb';
-import { Component } from 'react'
-// import { Howl, Howler } from "howler";
-// const themeNow = new Howl()
+import { useState, useEffect } from 'react';
+import { openDB } from 'idb';
 
+const Player = () => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioInstance, setAudioInstance] = useState(null);
+  const [musicFiles, setMusicFiles] = useState([]);
 
-
-export default class Player extends Component {
-
-  constructor(props) {
-    super(props)
-    this.state = {
-      permission: false,
-      biblioteca: [],
-      lista: [
-
-      ],
-      player: new Audio(),
-    }
-    this.RetrieveMusicFiles = this.RetrieveMusicFiles.bind(this)
-    this.getBiblio = this.getBiblio.bind(this)
-  }
-
-  RetrieveMusicFiles = async () => {
-    try {
-      const db = await openDatabase();
-      const transaction = db.transaction(['music'], 'readonly');
-      const objectStore = transaction.objectStore('music');
-      const request = objectStore.getAll();
-
-      request.onsuccess = (event) => {
-        const files = event.target.result;
-        this.setState({ biblioteca: files })
-      };
-    } catch (error) {
-      console.error('Error retrieving music files:', error);
+  const togglePlay = () => {
+    if (audioInstance) {
+      if (audioInstance.paused) {
+        audioInstance.play();
+      } else {
+        audioInstance.pause();
+      }
+      setIsPlaying(!audioInstance.paused);
     }
   };
 
-  handleFileUpload = async (event) => {
-    const files = event.target.files;
+  const openMusicDatabase = async () => {
+    return await openDB('musicDatabase', 1);
+  };
 
-    try {
-      const db = await openDatabase();
-      const transaction = db.transaction(['music'], 'readwrite');
-      const objectStore = transaction.objectStore('music');
+  const storeFileInIndexedDB = async (fileData, fileName) => {
+    const db = await openMusicDatabase();
+    const transaction = db.transaction('musicStore', 'readwrite');
+    const store = transaction.objectStore('musicStore');
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const request = objectStore.add(file);
+    await store.put(fileData, fileName);
+  };
 
-        request.onsuccess = () => {
-          console.log('File added to IndexedDB:', file.name);
-        };
+  const loadFilesFromIndexedDB = async () => {
+    const db = await openMusicDatabase();
+    const transaction = db.transaction('musicStore', 'readonly');
+    const store = transaction.objectStore('musicStore');
+    return await store.getAll();
+  };
 
-        request.onerror = (event) => {
-          console.error('Error adding file to IndexedDB:', event.target.error);
-        };
-      }
-
-      this.setState({ biblioteca: [...this.state.biblioteca, ...files] })
-    } catch (error) {
-      console.error('Error uploading files:', error);
-    }
-  }
-
-  OpenDatabase = () => {
+  const decodeAudioData = async (audioContext, arrayBuffer) => {
     return new Promise((resolve, reject) => {
-      const request = window.indexedDB.open('MusicDatabase', 1);
-
-      request.onerror = (event) => {
-        reject(event.target.error);
-      };
-
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        resolve(db);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        db.createObjectStore('music', { keyPath: 'name' });
-      };
+      audioContext.decodeAudioData(arrayBuffer, resolve, reject);
     });
   };
 
-  render() {
-    const { player, biblioteca } = this.state
+  const loadMusicFiles = async () => {
+    const files = await loadFilesFromIndexedDB();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // Decodificar los ArrayBuffer en objetos de audio
+    const audioPromises = files.map(async (file) => {
+      const audioBuffer = await decodeAudioData(audioContext, file);
+      return new Audio(URL.createObjectURL(new Blob([audioBuffer])));
+    });
+  
+    // Esperar a que se completen todas las promesas
+    Promise.all(audioPromises)
+      .then((audioInstances) => {
+        setMusicFiles(audioInstances);
+      })
+      .catch((error) => {
+        console.error('Error al decodificar audio:', error);
+      });
+  };
+  
+  const handleFileChange = async (event) => {
+    const selectedFiles = Array.from(event.target.files);
+    try {
+      // Almacenar cada archivo en IndexedDB en transacciones separadas
+      for (const file of selectedFiles) {
+        try {
+          const fileData = await file.arrayBuffer();
+          await storeFileInIndexedDB(fileData, file.name);
+        } catch (error) {
+          console.error('Error al almacenar archivo en IndexedDB:', error);
+        }
+      }
 
-    console.log(biblioteca, player);
-    return (
-      <div>
+      // Actualizar la lista de archivos después de completar todas las transacciones
+      loadMusicFiles();
+    } catch (error) {
+      console.error('Error en la transacción IndexedDB:', error);
+    }
+  };
 
-        <input type="file" multiple onChange={this.handleFileUpload} />
+  useEffect(() => {
+    const loadMusicFromIndexedDB = async () => {
+      await openDB('musicDatabase', 1, {
+        upgrade(db) {
+          db.createObjectStore('musicStore');
+        },
+      });
 
-        <button onClick={() => {
-          // honk.currentTime=0
-          player.play()
-        }}>
-          ▶
-        </button>
-        <audio src=""></audio>
-        <button onClick={() => {
-          player.pause()
-        }}>
-          ⏸
-        </button>
-        <h3>{ }</h3>
-      </div>
-    )
-  }
-}
+      loadMusicFiles()
+
+      const allFiles = await loadFilesFromIndexedDB();
+        // Create an instance of Audio for the first music file
+        if (allFiles.length > 0) {
+          const audio = new Audio(URL.createObjectURL(new Blob([allFiles[0]])));
+          setAudioInstance(audio);
+        }
+    };
+
+    loadMusicFromIndexedDB();
+
+    
+  }, []);
+
+  console.log(musicFiles[0]);
+
+  return (
+    <div>
+      <h2>Reproductor de Audio</h2>
+      <input type="file" multiple onChange={handleFileChange} />
+      {/* {musicFiles.map((fileName, index) => (
+        <div key={index}>{fileName}</div>
+      ))} */}
+     <button onClick={togglePlay}>
+        {isPlaying ? 'Pausar' : 'Reproducir'}
+      </button>
+    </div>
+  );
+};
+
+export default Player;
