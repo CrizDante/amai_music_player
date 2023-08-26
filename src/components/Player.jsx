@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { openDB } from 'idb';
+import AudioFile from '../contexts/AudioFile';
 
 const Player = () => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -21,12 +22,41 @@ const Player = () => {
     return await openDB('musicDatabase', 1);
   };
 
-  const storeFileInIndexedDB = async (fileData, fileName) => {
+  const storeFileInIndexedDB = async (fileData, fileName, metadata) => {
     const db = await openMusicDatabase();
     const transaction = db.transaction('musicStore', 'readwrite');
     const store = transaction.objectStore('musicStore');
+  
+    const fileObject = {
+      data: fileData,
+      metadata: metadata
+    };
+  
+    await store.put(fileObject, fileName);
+  };
+  
 
-    await store.put(fileData, fileName);
+  const getMetadata = async (file) => {
+    const audioContext = await new AudioContext();
+    const audioFile = new AudioFile(audioContext, file.path);
+  
+    audioFile.onloadedmetadata = () => {
+      const metadata = {
+        title: audioFile.getTitle(),
+        artist: audioFile.getArtist(),
+        album: audioFile.getAlbum(),
+        year: audioFile.getYear(),
+        trackNumber: audioFile.getTrackNumber(),
+        genre: audioFile.getGenre(),
+        duration: audioFile.getDuration()
+      };
+  
+      audioFile.removeEventListener('loadedmetadata');
+  
+      return metadata;
+    };
+  
+    await audioFile.load();
   };
 
   const loadFilesFromIndexedDB = async () => {
@@ -68,7 +98,8 @@ const Player = () => {
       for (const file of selectedFiles) {
         try {
           const fileData = await file.arrayBuffer();
-          await storeFileInIndexedDB(fileData, file.name);
+          const metadata = await getMetadata(file);
+          await storeFileInIndexedDB(fileData, file.name, metadata);
         } catch (error) {
           console.error('Error al almacenar archivo en IndexedDB:', error);
         }
@@ -101,7 +132,7 @@ const Player = () => {
 
     loadMusicFromIndexedDB();
 
-    
+    return [loadMusicFromIndexedDB, loadFilesFromIndexedDB, setAudioInstance];
   }, []);
 
   console.log(musicFiles[0]);
@@ -119,5 +150,7 @@ const Player = () => {
     </div>
   );
 };
+
+
 
 export default Player;
